@@ -1,6 +1,6 @@
 # recp - Roku ECP
 
-A lightweight bash script to control Roku TVs over your local network.
+A lightweight bash binary to control Roku TVs over your local network.
 
 # Features
 
