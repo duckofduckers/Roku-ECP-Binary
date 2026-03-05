@@ -4,44 +4,44 @@ A lightweight bash script to control Roku TVs over your local network.
 
 # Features
 
-· Interactive shell to control your Roku
-· Auto-scan network for devices or enter IP manually
-· Send keypresses (Home, Up, Down, Play, etc.)
-· List and launch apps
-· Power on/off
-· Get device info
-· Chain multiple commands with delays
-· Remembers last used device
+- Interactive shell to control your Roku
+- Auto-scan network for devices or enter IP manually
+-Send keypresses (Home, Up, Down, Play, etc.)
+- List and launch apps
+- Power on/off
+- Get device info
+- Chain multiple commands with delays
+- Remembers last used device
 
 # Installation
 
-Install dependencies
+## Install dependencies
 
-Debian/Ubuntu:
+## Debian/Ubuntu:
 
 ```bash
 sudo apt install nmap curl net-tools
 ```
 
-Arch/CachyOS/Manjaro:
+## Arch/CachyOS/Manjaro:
 
 ```bash
 sudo pacman -S nmap curl net-tools
 ```
 
-Fedora:
+## Fedora:
 
 ```bash
 sudo dnf install nmap curl net-tools
 ```
 
-macOS:
+## macOS:
 
 ```bash
 brew install nmap
 ```
 
-Android (Termux):
+## Android (Termux):
 
 ```bash
 pkg install nmap
@@ -101,7 +101,7 @@ recp help
 
 # Multiple Commands
 
-Separate with / and use *delay* to wait:
+- Separate with / and use *delay* to wait:
 
 ```bash
 Home/Select/Play
@@ -114,21 +114,20 @@ Home/Select/Play
 
 # Requirements
 
-· nmap
-· curl
-· awk
-· sed
-· grep
-· ifconfig
+- nmap
+- curl
+- awk
+- sed
+- grep
+- ifconfig
 
-# Compatibility
+# Compatibility OS Status
 
-OS Status
-Linux ✅ Full
-macOS ✅ Full
-Android (Termux) ✅ Full
-WSL1 ✅ Full
-WSL2 ⚠️ Manual IP only
+- Linux ✅ Full
+- macOS ✅ Full
+- Android (Termux) ✅ Full
+- WSL1 ✅ Full
+- WSL2 ⚠️ Manual IP only
 
 # License
 
