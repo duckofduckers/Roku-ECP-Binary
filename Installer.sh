@@ -13,7 +13,7 @@ TARGET="$BIN/recp"
 URL="https://raw.githubusercontent.com/duckofduckers/Roku-ECP-Binary/refs/heads/main/recp"
 
 if [[ -f "$TARGET" ]]; then
-    echo -e "${BLUE}[+] recp already installed{X}"
+    echo -e "${BLUE}[+] recp already installed${X}"
     exit 0
 fi
 
