@@ -8,7 +8,7 @@ X='\033[0m'
 
 [ -z "${BASH_VERSION:-}" ] && echo "${RED}[!] This script must be run with bash" && exit 1
 
-BIN=$(dirname "$BASH" || su -c 'dirname "$BASH"')
+BIN=$(dirname "$BASH" || sudo dirname "$BASH" || su -c 'dirname "$BASH"')
 TARGET="$BIN/recp"
 URL="https://raw.githubusercontent.com/duckofduckers/Roku-ECP-Binary/refs/heads/main/recp"
 
