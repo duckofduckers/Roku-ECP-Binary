@@ -6,8 +6,8 @@ HISTORY_FILE="$HOME/.recp-history"
 ROKU_PORT=8060
 TIMEOUT=1.8
 
-REACHABLE_TIMEOUT_CONNECT=0.8
-REACHABLE_TIMEOUT_TOTAL=2.5
+REACHABLE_TIMEOUT_CONNECT=1
+REACHABLE_TIMEOUT_TOTAL=2.8
 
 for cmd in nmap curl awk sed grep ifconfig; do
     command -v $cmd >/dev/null 2>&1 || { echo; echo -e "${RED}Please install $cmd${RESET}"; echo; exit 1; }
