@@ -13,9 +13,7 @@ A lightweight bash script to control Roku TVs over your local network.
 - Chain multiple commands with delays
 - Remembers last used device
 
-# Installation
-
-## Install dependencies
+# Install dependencies
 
 ## Debian/Ubuntu:
 
