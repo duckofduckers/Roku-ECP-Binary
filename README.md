@@ -2,6 +2,10 @@
 
 A lightweight bash binary to control Roku TVs over your local network.
 
+# Note
+
+Not very actively maintained but if there are problems PLEASE let me know.
+
 # Features
 
 - Interactive shell to control your Roku
