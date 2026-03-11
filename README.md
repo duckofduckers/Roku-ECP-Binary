@@ -112,7 +112,7 @@ Home/Select/Play
 
 # Files
 
-~/.recp-history – Stores last used device IP
+~/.recp_history – Stores last used device IP
 
 # Requirements
 
