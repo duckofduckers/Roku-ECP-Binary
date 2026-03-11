@@ -2,12 +2,9 @@
 
 RED="\033[31m"
 RESET="\033[0m"
-HISTORY_FILE="$HOME/.recp-history"
+HISTORY_FILE="$HOME/.recp_history"
 ROKU_PORT=8060
 TIMEOUT=1.8
-
-REACHABLE_TIMEOUT_CONNECT=1
-REACHABLE_TIMEOUT_TOTAL=2.8
 
 for cmd in nmap curl awk sed grep ifconfig; do
     command -v $cmd >/dev/null 2>&1 || { echo; echo -e "${RED}Please install $cmd${RESET}"; echo; exit 1; }
@@ -35,9 +32,20 @@ mask2cidr () {
     echo $n
 }
 
-is_tv_reachable() {
-    curl -s --connect-timeout "$REACHABLE_TIMEOUT_CONNECT" --max-time "$REACHABLE_TIMEOUT_TOTAL" \
-         "http://$ROKU:$ROKU_PORT/query/device-info" >/dev/null 2>&1
+urlencode() {
+    local string="$1"
+    local strlen=${#string}
+    local encoded=""
+    local pos c o
+    for (( pos=0 ; pos<strlen ; pos++ )); do
+        c=${string:$pos:1}
+        case "$c" in
+            [-_.~a-zA-Z0-9] ) o="${c}" ;;
+            * ) printf -v o '%%%02x' "'$c" ;;
+        esac
+        encoded+="${o}"
+    done
+    echo "$encoded"
 }
 
 print_help() {
@@ -70,13 +78,6 @@ print_global_help() {
     echo "  connect         - scan or manually enter a Roku device and save it"
     echo "  disconnect      - forget the saved device"
     echo "  help            - show this help message"
-    echo
-}
-
-print_is_not_reachable() {
-    echo
-    echo -e "${RED}TV appears to be unreachable.${RESET}"
-    echo "Only 'exit()', 'help' and 'clear' are available right now."
     echo
 }
 
@@ -117,8 +118,8 @@ clear_history() {
 }
 
 connect_interactive() {
-    local MODE MANUAL_IP IP MASK NETWORK CIDR ACTIVE_IPS HOST resp NAME selection
-    local -a ROKU_IPS ROKU_NAMES
+    local MODE MANUAL_IP IP MASK NETWORK CIDR HOST resp NAME selection
+    local -a SCAN_IPS ROKU_IPS ROKU_NAMES
 
     echo
     echo "Select connection method:"
@@ -147,7 +148,7 @@ connect_interactive() {
             echo
         done
 
-        resp=$(curl -s --max-time "$TIMEOUT" "http://$MANUAL_IP:$ROKU_PORT/query/device-info" 2>/dev/null)
+        resp=$(curl -s --max-time 2 "http://$MANUAL_IP:$ROKU_PORT/query/device-info" 2>/dev/null)
         if [[ $resp =~ friendly-device-name ]]; then
             NAME=$(echo "$resp" | sed -n 's/.*<friendly-device-name>\(.*\)<\/friendly-device-name>.*/\1/p' | tr -d '\r')
             [[ -z "$NAME" ]] && NAME="Unnamed Roku"
@@ -174,16 +175,50 @@ connect_interactive() {
         valid_ip "$IP" || { echo; echo -e "${RED}Could not determine local network IP${RESET}"; echo; return 1; }
 
         echo "Local IP: $IP"
-        echo "Scanning subnet ${NETWORK}/${CIDR} (may take 5-15 seconds)..."
+        echo "Scanning subnet ${NETWORK}/${CIDR} (may take 5-15 seconds or more)..."
         echo
 
-        ACTIVE_IPS=$(nmap -sn -T4 "${NETWORK}/${CIDR}" 2>/dev/null | \
-        awk '/Nmap scan report for/{print $NF}' | \
-        grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$')
-        [[ -z "$ACTIVE_IPS" ]] && { echo; echo -e "${RED}No active hosts found.${RESET}"; echo; return 1; }
+        ip_to_int() {
+            local IFS=.
+            read -r a b c d <<< "$1"
+            echo $(( (a << 24) | (b << 16) | (c << 8) | d ))
+        }
+        int_to_ip() {
+            local n=$1
+            echo "$(( (n >> 24) & 255 )).$(( (n >> 16) & 255 )).$(( (n >> 8) & 255 )).$(( n & 255 ))"
+        }
 
-        for HOST in $ACTIVE_IPS; do
-            resp=$(curl -s --max-time "$TIMEOUT" "http://$HOST:$ROKU_PORT/query/device-info" 2>/dev/null)
+        net_int=$(ip_to_int "$NETWORK")
+        mask_int=$(( 0xFFFFFFFF << (32 - CIDR) ))
+        network_int=$(( net_int & mask_int ))
+        broadcast_int=$(( network_int | ~mask_int & 0xFFFFFFFF ))
+        start_int=$(( network_int + 1 ))
+        end_int=$(( broadcast_int - 1 ))
+        total_hosts=$(( end_int - start_int + 1 ))
+
+        if [[ $total_hosts -gt 1024 || $total_hosts -le 0 ]]; then
+            SCAN_IPS=($(nmap -sn -T4 "${NETWORK}/${CIDR}" 2>/dev/null | \
+            awk '/Nmap scan report for/{print $NF}' | \
+            grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'))
+        else
+            SCAN_IPS=()
+            while IFS= read -r ip; do
+                SCAN_IPS+=("$ip")
+            done < <(
+                for ((ip_int=start_int; ip_int<=end_int; ip_int++)); do
+                    (
+                        candidate=$(int_to_ip $ip_int)
+                        timeout 0.5 bash -c "echo >/dev/tcp/$candidate/8060" 2>/dev/null && echo "$candidate"
+                    ) &
+                done
+                wait
+            )
+        fi
+
+        [[ ${#SCAN_IPS[@]} -eq 0 ]] && { echo; echo -e "${RED}No Roku devices found.${RESET}"; echo; return 1; }
+
+        for HOST in "${SCAN_IPS[@]}"; do
+            resp=$(curl -s --max-time 2 "http://$HOST:$ROKU_PORT/query/device-info" 2>/dev/null)
             if [[ $resp =~ friendly-device-name ]]; then
                 NAME=$(echo "$resp" | sed -n 's/.*<friendly-device-name>\(.*\)<\/friendly-device-name>.*/\1/p' | tr -d '\r')
                 [[ -z "$NAME" ]] && NAME="Roku-$HOST"
@@ -191,7 +226,6 @@ connect_interactive() {
                 ROKU_NAMES+=("$NAME")
                 echo "Found: $NAME ($HOST)"
             fi
-            sleep 0.05
         done
 
         [[ ${#ROKU_IPS[@]} -eq 0 ]] && { echo; echo -e "${RED}No Roku devices found.${RESET}"; echo; return 1; }
@@ -224,35 +258,48 @@ process_command() {
     [[ "$CMD" == "clear" ]] && { clear; return; }
     [[ "$CMD" == "help" ]] && { print_help; return; }
 
-    if ! is_tv_reachable; then
-        print_is_not_reachable
-        return
-    fi
-
     case "$CMD" in
         apps)
             echo
-            curl -s --max-time 0.56 "http://$ROKU:$ROKU_PORT/query/apps" | \
-            grep -o '<app .*</app>' | \
-            while IFS= read -r line; do
-                id=$(echo "$line" | sed -n 's/.*id="\([^"]*\)".*/\1/p')
-                name=$(echo "$line" | sed -n 's/.*>\(.*\)<\/app>/\1/p')
-                [[ -n "$name" ]] && echo "$id → $name"
-            done | nl -w2 -s': '
+            response=$(curl -s --max-time 0.56 -w "%{http_code}" "http://$ROKU:$ROKU_PORT/query/apps")
+            status_code="${response: -3}"
+            body="${response%???}"
+            if [[ "$status_code" == "200" ]]; then
+                echo "$body" | grep -o '<app .*</app>' | \
+                while IFS= read -r line; do
+                    id=$(echo "$line" | sed -n 's/.*id="\([^"]*\)".*/\1/p')
+                    name=$(echo "$line" | sed -n 's/.*>\(.*\)<\/app>/\1/p')
+                    [[ -n "$name" ]] && echo "$id → $name"
+                done | nl -w2 -s': '
+            else
+                echo -e "${RED}Failed to get apps (HTTP $status_code)${RESET}"
+            fi
             echo
             ;;
         tv-info)
             echo
-            curl -s --max-time 0.55 "http://$ROKU:$ROKU_PORT/query/device-info" | \
-            sed -n 's/<\([^>]*\)>\(.*\)<\/\1>/\1: \2/p' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+            response=$(curl -s --max-time 0.55 -w "%{http_code}" "http://$ROKU:$ROKU_PORT/query/device-info")
+            status_code="${response: -3}"
+            body="${response%???}"
+            if [[ "$status_code" == "200" ]]; then
+                echo "$body" | sed -n 's/<\([^>]*\)>\(.*\)<\/\1>/\1: \2/p' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+            else
+                echo -e "${RED}Failed to get device info (HTTP $status_code)${RESET}"
+            fi
             echo
             ;;
         active-app)
             echo
-            resp=$(curl -s --max-time 0.5 "http://$ROKU:$ROKU_PORT/query/active-app")
-            id=$(echo "$resp" | sed -n 's/.*id="\([^"]*\)".*/\1/p')
-            name=$(echo "$resp" | sed -n 's/.*>\(.*\)<\/app>.*/\1/p')
-            [[ -n "$name" ]] && echo "Active: $id → $name" || echo "No active app detected"
+            response=$(curl -s --max-time 0.5 -w "%{http_code}" "http://$ROKU:$ROKU_PORT/query/active-app")
+            status_code="${response: -3}"
+            body="${response%???}"
+            if [[ "$status_code" == "200" ]]; then
+                id=$(echo "$body" | sed -n 's/.*id="\([^"]*\)".*/\1/p')
+                name=$(echo "$body" | sed -n 's/.*>\(.*\)<\/app>.*/\1/p')
+                [[ -n "$name" ]] && echo "Active: $id → $name" || echo "No active app detected"
+            else
+                echo -e "${RED}Failed to get active app (HTTP $status_code)${RESET}"
+            fi
             echo
             ;;
         launch*)
@@ -263,18 +310,44 @@ process_command() {
                 echo
                 return
             fi
-            curl -s --max-time 0.6 -o /dev/null -X POST "http://$ROKU:$ROKU_PORT/launch/$APP_ID"
-            echo "Launch request sent for app $APP_ID"
+            raw_code=$(curl -s --max-time 4.0 -o /dev/null -w "%{http_code}" -X POST "http://$ROKU:$ROKU_PORT/launch/$APP_ID")
+            code=$(echo -n "$raw_code" | tr -d '\r\n' | xargs)
+            if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
+                echo "Launch request sent for app $APP_ID"
+            else
+                [[ -z "$code" ]] && code="no status"
+                echo -e "${RED}Launch failed (HTTP $code)${RESET}"
+            fi
             echo
             ;;
         power)
-            curl -s --max-time 0.6 -o /dev/null -X POST "http://$ROKU:$ROKU_PORT/keypress/Power"
             echo
-            echo "Power key sent"
+            raw_code=$(curl -s --max-time 0.6 -o /dev/null -w "%{http_code}" -X POST "http://$ROKU:$ROKU_PORT/keypress/Power")
+            code=$(echo -n "$raw_code" | tr -d '\r\n' | xargs)
+            if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
+                echo "Power key sent"
+            else
+                [[ -z "$code" ]] && code="no status"
+                echo -e "${RED}Power failed (HTTP $code)${RESET}"
+            fi
             echo
             ;;
         *)
-            curl -s --max-time 0.6 -o /dev/null -X POST "http://$ROKU:$ROKU_PORT/keypress/$CMD"
+            encoded_cmd=$(urlencode "$CMD")
+            raw_code=$(curl -s --max-time 0.6 -o /dev/null -w "%{http_code}" -X POST "http://$ROKU:$ROKU_PORT/keypress/$encoded_cmd")
+            code=$(echo -n "$raw_code" | tr -d '\r\n' | xargs)
+            if [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
+                :
+            elif [[ "$code" == "400" ]]; then
+                echo
+                echo -e "${RED}Invalid keypress: '$CMD'${RESET}" >&2
+                echo >&2
+            else
+                [[ -z "$code" ]] && code="no status"
+                echo
+                echo -e "${RED}Keypress '$CMD' failed (HTTP $code)${RESET}" >&2
+                echo >&2
+            fi
             ;;
     esac
 }
@@ -282,7 +355,7 @@ process_command() {
 execute_command_string() {
     local CMD="$1"
     CMD="${CMD#"${CMD%%[![:space:]]*}"}"
-    CMD="${CMD%"${CMD##*[![:space:]]}"}" 
+    CMD="${CMD%"${CMD##*[![:space:]]}"}"
     [[ -z "$CMD" ]] && return
 
     if [[ "$CMD" != *"/"* ]]; then
@@ -291,7 +364,7 @@ execute_command_string() {
     fi
 
     IFS='/' read -ra PARTS <<< "$CMD"
-    
+
     local empty=false
     for part in "${PARTS[@]}"; do
         [[ -z "${part//[[:space:]]/}" ]] && empty=true && break
@@ -307,7 +380,7 @@ execute_command_string() {
     for i in "${!PARTS[@]}"; do
         part="${PARTS[i]}"
         p="${part#"${part%%[![:space:]]*}"}"
-        p="${p%"${p##*[![:space:]]}"}"  
+        p="${p%"${p##*[![:space:]]}"}"
         if [[ "$p" =~ ^\*([0-9]+(\.[0-9]+)?)\*$ ]]; then
             if [[ ! $last_was_command && $i -ne 0 ]]; then
                 echo
@@ -333,7 +406,7 @@ if [ $# -eq 0 ]; then
             fi
             CMD="${input,,}"
             CMD="${CMD#"${CMD%%[![:space:]]*}"}"
-            CMD="${CMD%"${CMD##*[![:space:]]}"}" 
+            CMD="${CMD%"${CMD##*[![:space:]]}"}"
             [[ -z "$CMD" ]] && continue
 
             if [[ "$CMD" != *"/"* ]]; then
@@ -342,7 +415,7 @@ if [ $# -eq 0 ]; then
             fi
 
             IFS='/' read -ra PARTS <<< "$CMD"
-            
+
             empty=false
             for part in "${PARTS[@]}"; do
                 [[ -z "${part//[[:space:]]/}" ]] && empty=true && break
@@ -358,7 +431,7 @@ if [ $# -eq 0 ]; then
             for i in "${!PARTS[@]}"; do
                 part="${PARTS[i]}"
                 p="${part#"${part%%[![:space:]]*}"}"
-                p="${p%"${p##*[![:space:]]}"}"  
+                p="${p%"${p##*[![:space:]]}"}"
                 if [[ "$p" =~ ^\*([0-9]+(\.[0-9]+)?)\*$ ]]; then
                     if [[ ! $last_was_command && $i -ne 0 ]]; then
                         echo
@@ -433,5 +506,6 @@ else
     echo
     echo -e "${RED}Unknown command.${RESET}"
     print_global_help
+    echo
     exit 1
 fi
