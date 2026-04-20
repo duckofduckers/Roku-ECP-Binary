@@ -69,9 +69,9 @@ recp connect
 recp
 
 # Run a single command
-recp --exec "power"
-recp --exec "apps"
-recp --exec "launch 12"
+recp exec "power"
+recp exec "apps"
+recp exec "launch 12"
 
 # Forget saved device
 recp disconnect
