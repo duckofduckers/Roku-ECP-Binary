@@ -358,8 +358,6 @@ execute_command_string() {
     CMD="${CMD#"${CMD%%[![:space:]]*}"}"
     CMD="${CMD%"${CMD##*[![:space:]]}"}"
     [[ -z "$CMD" ]] && return
-
-    # Treat a lone "/" as an invalid keypress
     if [[ "$CMD" == "/" ]]; then
         echo -e "${RED}Invalid keypress: '/'${RESET}" >&2
         return
