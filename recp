@@ -1,9 +1,11 @@
+
 #!/usr/bin/env bash
 
 RED="\033[31m"
 RESET="\033[0m"
 HISTORY_FILE="$HOME/.recp_history"
 ROKU_PORT=8060
+TIMEOUT=2
 
 for cmd in nmap curl awk sed grep ifconfig; do
     command -v $cmd >/dev/null 2>&1 || { echo; echo -e "${RED}Please install $cmd${RESET}"; echo; exit 1; }
@@ -52,21 +54,21 @@ print_help() {
     echo "Connected to ${ROKU_NAME} (${ROKU})"
     echo
     echo "Commands:"
-    echo "  launch <app_id>     → open app (example: launch 12)"
-    echo "  apps                → list installed apps"
-    echo "  active-app          → show current app"
-    echo "  tv-info             → full device information"
-    echo "  power               → toggle power (on/off)"
-    echo "  clear               → clear screen"
-    echo "  help                → this message"
-    echo "  exit()              → quit"
-    echo "  Any other word → sent as keypress (Home, Up, Down, Rev, Play, etc.)"
+    echo "  launch <app_id>     - open app (example: launch 12)"
+    echo "  apps                - list installed apps"
+    echo "  active-app          - show current app"
+    echo "  tv-info             - full device information"
+    echo "  power               - toggle power (on/off)"
+    echo "  clear               - clear screen"
+    echo "  help                - this message"
+    echo "  exit()              - quit"
+    echo "  Any other word      - sent as keypress"
     echo
     echo "Command Syntax:"
-    echo "  cmd/cmd             → multiple commands (separated by /)"
-    echo "  *delay*/cmd/*delay*/cmd     → command with delays"
-    echo "  cmd+value           → repeat command value times"
-    echo "  cmd+value*delay*    → repeat command value times with delay"
+    echo "  cmd/cmd             - multiple commands (separated by /)"
+    echo "  *delay*/cmd/        - command with delays"
+    echo "  cmd+value           - repeat command value times"
+    echo "  cmd+value*delay*    - repeat command value times with delay"
     echo
 }
 
@@ -92,7 +94,7 @@ load_history() {
     if [ -f "$HISTORY_FILE" ] && [ -s "$HISTORY_FILE" ]; then
         read -r ROKU < "$HISTORY_FILE"
         if valid_ip "$ROKU"; then
-            resp=$(curl -s "http://$ROKU:$ROKU_PORT/query/device-info" 2>/dev/null)
+            resp=$(curl -s --max-time "$TIMEOUT" "http://$ROKU:$ROKU_PORT/query/device-info" 2>/dev/null)
             if [[ $resp =~ friendly-device-name ]]; then
                 ROKU_NAME=$(echo "$resp" | sed -n 's/.*<friendly-device-name>\(.*\)<\/friendly-device-name>.*/\1/p' | tr -d '\r')
             else
@@ -149,7 +151,7 @@ connect_interactive() {
             echo
         done
 
-        resp=$(curl -s --max-time 2 "http://$MANUAL_IP:$ROKU_PORT/query/device-info" 2>/dev/null)
+        resp=$(curl -s --max-time "$TIMEOUT" "http://$MANUAL_IP:$ROKU_PORT/query/device-info" 2>/dev/null)
         if [[ $resp =~ friendly-device-name ]]; then
             NAME=$(echo "$resp" | sed -n 's/.*<friendly-device-name>\(.*\)<\/friendly-device-name>.*/\1/p' | tr -d '\r')
             [[ -z "$NAME" ]] && NAME="Unnamed Roku"
@@ -173,7 +175,7 @@ connect_interactive() {
 
         NETWORK="$((i1&m1)).$((i2&m2)).$((i3&m3)).$((i4&m4))"
 
-        valid_ip "$IP" || { echo; echo -e "${RED}Could not determine local network IP${RESET}"; echo; return 1; }
+        valid_ip "$IP" || { echo -e "${RED}Could not determine local network IP${RESET}"; echo; return 1; }
 
         echo "Local IP: $IP"
         echo "Scanning subnet ${NETWORK}/${CIDR} (may take 5-15 seconds or more)..."
@@ -198,7 +200,7 @@ connect_interactive() {
         total_hosts=$(( end_int - start_int + 1 ))
 
         if [[ $total_hosts -gt 1024 || $total_hosts -le 0 ]]; then
-            SCAN_IPS=($(nmap -sn -T4 "${NETWORK}/${CIDR}" 2>/dev/null | \
+            SCAN_IPS=($(nmap -sn -T4 --host-timeout "${TIMEOUT}s" "${NETWORK}/${CIDR}" 2>/dev/null | \
             awk '/Nmap scan report for/{print $NF}' | \
             grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'))
         else
@@ -209,17 +211,17 @@ connect_interactive() {
                 for ((ip_int=start_int; ip_int<=end_int; ip_int++)); do
                     (
                         candidate=$(int_to_ip $ip_int)
-                        timeout 0.5 bash -c "echo >/dev/tcp/$candidate/8060" 2>/dev/null && echo "$candidate"
+                        timeout "$TIMEOUT" bash -c "echo >/dev/tcp/$candidate/8060" 2>/dev/null && echo "$candidate"
                     ) &
                 done
                 wait
             )
         fi
 
-        [[ ${#SCAN_IPS[@]} -eq 0 ]] && { echo; echo -e "${RED}No Roku devices found.${RESET}"; echo; return 1; }
+        [[ ${#SCAN_IPS[@]} -eq 0 ]] && { echo -e "${RED}No Roku devices found.${RESET}"; echo; return 1; }
 
         for HOST in "${SCAN_IPS[@]}"; do
-            resp=$(curl -s --max-time 2 "http://$HOST:$ROKU_PORT/query/device-info" 2>/dev/null)
+            resp=$(curl -s --max-time "$TIMEOUT" "http://$HOST:$ROKU_PORT/query/device-info" 2>/dev/null)
             if [[ $resp =~ friendly-device-name ]]; then
                 NAME=$(echo "$resp" | sed -n 's/.*<friendly-device-name>\(.*\)<\/friendly-device-name>.*/\1/p' | tr -d '\r')
                 [[ -z "$NAME" ]] && NAME="Roku-$HOST"
@@ -229,7 +231,7 @@ connect_interactive() {
             fi
         done
 
-        [[ ${#ROKU_IPS[@]} -eq 0 ]] && { echo; echo -e "${RED}No Roku devices found.${RESET}"; echo; return 1; }
+        [[ ${#ROKU_IPS[@]} -eq 0 ]] && { echo -e "${RED}No Roku devices found.${RESET}"; echo; return 1; }
 
         echo
         echo "Select a Roku device:"
@@ -297,7 +299,7 @@ process_command() {
             if [[ "$status_code" == "200" ]]; then
                 id=$(echo "$body" | sed -n 's/.*id="\([^"]*\)".*/\1/p')
                 name=$(echo "$body" | sed -n 's/.*>\(.*\)<\/app>.*/\1/p')
-                [[ -n "$name" ]] && echo "Active: $id → $name" || echo "No active app detected"
+                [[ -n "$name" ]] && echo "Active: $id - $name" || echo "No active app detected"
             else
                 echo -e "${RED}Failed to get active app (HTTP $status_code)${RESET}"
             fi
@@ -358,6 +360,7 @@ execute_command_string() {
     CMD="${CMD#"${CMD%%[![:space:]]*}"}"
     CMD="${CMD%"${CMD##*[![:space:]]}"}"
     [[ -z "$CMD" ]] && return
+
     if [[ "$CMD" == "/" ]]; then
         echo -e "${RED}Invalid keypress: '/'${RESET}" >&2
         return
@@ -453,7 +456,7 @@ if [ $# -eq 0 ]; then
             CMD="${CMD#"${CMD%%[![:space:]]*}"}"
             CMD="${CMD%"${CMD##*[![:space:]]}"}"
             [[ -z "$CMD" ]] && continue
-            
+
             if [[ "$CMD" == "/" ]]; then
                 echo
                 echo -e "${RED}Invalid keypress: '/'${RESET}" >&2
