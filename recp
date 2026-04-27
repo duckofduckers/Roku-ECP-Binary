@@ -1,4 +1,3 @@
-
 #!/usr/bin/env bash
 
 RED="\033[31m"
@@ -119,7 +118,7 @@ save_history() {
 clear_history() {
     rm -f "$HISTORY_FILE"
 }
-
+trap 'echo; exit' INT
 connect_interactive() {
     local MODE MANUAL_IP IP MASK NETWORK CIDR HOST resp NAME selection
     local -a SCAN_IPS ROKU_IPS ROKU_NAMES
