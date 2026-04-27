@@ -256,7 +256,7 @@ connect_interactive() {
 
 process_command() {
     local CMD="$1"
-    [[ "$CMD" == "exit()" ]] && { echo; exit; }
+    [[ "$CMD" == "exit()" ]] && { exit; }
     [[ "$CMD" == "clear" ]] && { clear; return; }
     [[ "$CMD" == "help" ]] && { print_help; return; }
 
